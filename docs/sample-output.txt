@@ -1,0 +1,106 @@
+==============================================================================
+  SCENARIO 1: Versioned ordering  (delivery: v2, v1, v2 again, v3)
+==============================================================================
+[t=01] RECV      A-100 v2 PAID
+[t=01] BUFFER    A-100 v2 PAID held; order stays at v0 (none); missing: v1
+[t=02] RECV      A-100 v1 CREATED
+[t=02] APPLY     A-100: v0 (none) -> v1 CREATED
+[t=02] RELEASE   A-100 v2 PAID released from buffer
+[t=02] APPLY     A-100: v1 CREATED -> v2 PAID
+[t=03] RECV      A-100 v2 PAID
+[t=03] DUP       A-100 v2 PAID already applied (current v2) -> IGNORED
+[t=04] RECV      A-100 v3 SHIPPED
+[t=04] APPLY     A-100: v2 PAID -> v3 SHIPPED
+
+  Final state : v3 SHIPPED
+  Applied in  : CREATED -> PAID -> SHIPPED
+  Stats       : {'APPLIED': 3, 'BUFFERED': 1, 'DUPLICATE': 1, 'REJECTED': 0}
+  [PASS] v2 arriving first was buffered, not applied
+  [PASS] applied order is CREATED -> PAID -> SHIPPED
+  [PASS] second copy of v2 was ignored as a duplicate
+  [PASS] each version applied exactly once
+
+==============================================================================
+  SCENARIO 2: Missing event  (v1 delivered, v2 lost, v3 delivered)
+==============================================================================
+[t=01] RECV      B-200 v1 CREATED
+[t=01] APPLY     B-200: v0 (none) -> v1 CREATED
+[t=02] RECV      B-200 v3 SHIPPED
+[t=02] BUFFER    B-200 v3 SHIPPED held; order stays at v1 CREATED; missing: v2
+
+  State while v2 is missing : v1 CREATED
+  Pending buffer            : [3]
+  Missing versions recorded : [2]
+
+[t=05] ALERT     B-200 waiting 3 ticks for v2 -> request resend
+[t=06] ALERT     B-200 waiting 4 ticks for v2 -> request resend
+  [PASS] order did NOT jump to SHIPPED
+  [PASS] v3 is held as pending
+  [PASS] v2 is detected as missing
+  [PASS] stalled gap raised an alert
+
+  -- producer re-sends the lost v2 --
+[t=07] RECV      B-200 v2 PAID
+[t=07] APPLY     B-200: v1 CREATED -> v2 PAID
+[t=07] RELEASE   B-200 v3 SHIPPED released from buffer
+[t=07] APPLY     B-200: v2 PAID -> v3 SHIPPED
+
+  Final state : v3 SHIPPED
+  Applied in  : CREATED -> PAID -> SHIPPED
+  [PASS] after v2 arrives, v3 is released and applied in order
+
+==============================================================================
+  SCENARIO 3: Stale worker  (lease + fencing tokens, store enforces)
+==============================================================================
+[t=01] LOCK      worker-A acquired lease, fencing token=1, expires t=6
+[t=02] PAUSE     worker-A stalls (long GC pause / network partition) before writing...
+[t=03] LOCK      worker-B denied: lease held by worker-A until t=6
+[t=07] LOCK      lease of worker-A expired at t=6
+[t=07] LOCK      worker-B acquired lease, fencing token=2, expires t=12
+[t=08] WRITE     worker-B (token=2) set C-300 -> SHIPPED, tracking=TRK-B-9001
+[t=10] RESUME    worker-A wakes up, still believes it holds the lock
+[t=10] REJECT    worker-A write with token=1 rejected: store has already seen token=2 (stale worker)
+[t=11] WRITE     worker-B (token=2) set C-300 -> SHIPPED, tracking=TRK-B-9001-rev2
+
+  Final record : status=SHIPPED tracking=TRK-B-9001-rev2 last_writer=worker-B highest_token=2
+  Accepted writes (worker:token) : ['worker-B:2', 'worker-B:2']
+  [PASS] worker-B (newer token=2) updated the order
+  [PASS] worker-A (older token=1) was rejected
+  [PASS] worker-B's data survived worker-A's stale attempt
+  [PASS] holder of the newest token can keep writing
+
+==============================================================================
+  SCENARIO 3b: Same timeline WITHOUT fencing (for contrast)
+==============================================================================
+[t=01] LOCK      worker-A acquired lease, fencing token=1, expires t=6
+[t=02] PAUSE     worker-A stalls (long GC pause / network partition) before writing...
+[t=03] LOCK      worker-B denied: lease held by worker-A until t=6
+[t=07] LOCK      lease of worker-A expired at t=6
+[t=07] LOCK      worker-B acquired lease, fencing token=2, expires t=12
+[t=08] WRITE     worker-B (token=2) set C-300 -> SHIPPED, tracking=TRK-B-9001
+[t=10] RESUME    worker-A wakes up, still believes it holds the lock
+[t=10] WRITE     worker-A (token=1) set C-300 -> SHIPPED, tracking=TRK-A-1234
+[t=11] WRITE     worker-B (token=2) set C-300 -> SHIPPED, tracking=TRK-B-9001-rev2
+
+  Tracking right after worker-A's stale write : TRK-A-1234
+  Accepted writes (worker:token)              : ['worker-B:2', 'worker-A:1', 'worker-B:2']
+  -> without fencing, the stale worker-A overwrote worker-B's newer data (lost update).
+
+==============================================================================
+  SCENARIO 4 (bonus): Chaos network, seed=42  (random order + duplicates, 5 orders)
+==============================================================================
+  delivery order: D-402:v3, D-404:v3, D-402:v2, D-401:v2, D-403:v1,
+                  D-400:v3, D-400:v2, D-403:v2, D-400:v2, D-400:v1,
+                  D-403:v3, D-401:v2, D-402:v1, D-403:v3, D-401:v1,
+                  D-404:v1, D-401:v1, D-403:v2, D-400:v1, D-401:v3,
+                  D-404:v2
+
+  D-400: v3 SHIPPED  history=['CREATED', 'PAID', 'SHIPPED']
+  D-401: v3 SHIPPED  history=['CREATED', 'PAID', 'SHIPPED']
+  D-402: v3 SHIPPED  history=['CREATED', 'PAID', 'SHIPPED']
+  D-403: v3 SHIPPED  history=['CREATED', 'PAID', 'SHIPPED']
+  D-404: v3 SHIPPED  history=['CREATED', 'PAID', 'SHIPPED']
+  Stats: {'APPLIED': 15, 'BUFFERED': 6, 'DUPLICATE': 6, 'REJECTED': 0}
+  [PASS] every order converged to CREATED -> PAID -> SHIPPED
+
+SUMMARY: 4/4 scenarios passed

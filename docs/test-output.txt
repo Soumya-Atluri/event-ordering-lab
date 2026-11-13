@@ -1,0 +1,16 @@
+test_newer_token_accepted_older_rejected (tests.test_fencing.FencingTests.test_newer_token_accepted_older_rejected) ... ok
+test_same_token_can_write_repeatedly (tests.test_fencing.FencingTests.test_same_token_can_write_repeatedly) ... ok
+test_tokens_increase_and_lease_is_exclusive (tests.test_fencing.FencingTests.test_tokens_increase_and_lease_is_exclusive) ... ok
+test_without_fencing_stale_write_wins (tests.test_fencing.FencingTests.test_without_fencing_stale_write_wins) ... ok
+test_duplicate_while_buffered_is_ignored (tests.test_ordering.OrderingTests.test_duplicate_while_buffered_is_ignored) ... ok
+test_gap_closes_when_missing_event_arrives (tests.test_ordering.OrderingTests.test_gap_closes_when_missing_event_arrives) ... ok
+test_invalid_status_rejected (tests.test_ordering.OrderingTests.test_invalid_status_rejected) ... ok
+test_missing_version_is_recorded_and_order_waits (tests.test_ordering.OrderingTests.test_missing_version_is_recorded_and_order_waits) ... ok
+test_only_later_version_on_fresh_order (tests.test_ordering.OrderingTests.test_only_later_version_on_fresh_order) ... ok
+test_orders_are_independent (tests.test_ordering.OrderingTests.test_orders_are_independent) ... ok
+test_v2_v1_v2_again (tests.test_ordering.OrderingTests.test_v2_v1_v2_again) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.001s
+
+OK
