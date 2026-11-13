@@ -19,7 +19,7 @@ No third-party packages are needed — only the Python 3.10+ standard library.
 ## How to run
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/Soumya-Atluri/event-ordering-lab.git
 cd event-ordering-lab
 
 python3 main.py              # run all scenarios (exit code 0 = all passed)
